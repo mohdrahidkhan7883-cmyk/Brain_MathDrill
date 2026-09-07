@@ -2,6 +2,7 @@ import streamlit as st
 import random
 import time
 import os
+import uuid
 from datetime import datetime
 
 import pandas as pd
@@ -145,7 +146,9 @@ defaults = {
     "total_questions": 10,
 
     "digits_a": 2,
-    "digits_b": 2
+    "digits_b": 2,
+
+    "user_id": None
 
 }
 
@@ -154,6 +157,21 @@ for key, value in defaults.items():
 
     if key not in st.session_state:
         st.session_state[key] = value
+
+
+# =========================================================
+# PER-USER / PER-TAB IDENTITY
+# =========================================================
+# A fresh unique ID is generated the first time this browser
+# tab/session touches the app. It stays the same for as long
+# as the user keeps this tab open (across reruns), so all
+# practice sessions done in one visit are grouped together.
+# Reopening the app (new tab / new session) generates a brand
+# new ID, so old history from other visits/users is not shown.
+
+if st.session_state.user_id is None:
+
+    st.session_state.user_id = str(uuid.uuid4())
 
 
 # =========================================================
@@ -258,21 +276,37 @@ def generate_question(
 
     elif operation == "Division (÷)":
 
-        divisor = generate_number(
-            max(1, digits_b)
-        )
+    # HARD MODE → Decimal answer (up to 3 decimal places)
+       if difficulty == "Hard":
 
-        quotient = generate_number(
-            max(1, digits_a)
-        )
+          dividend = generate_number(digits_a)
+          divisor = generate_number(digits_b)
 
-        dividend = divisor * quotient
+          question = f"{dividend} ÷ {divisor}"
+          answer = round(dividend / divisor, 3)
 
-        question = f"{dividend} ÷ {divisor}"
+    # EASY & MEDIUM → Exact Integer Division
+       else:
 
-        answer = quotient
+          # Generate divisor
+          divisor = generate_number(digits_b)
 
+          # Maximum dividend according to selected digits
+          max_dividend = (10 ** digits_a) - 1
 
+          # Maximum possible quotient
+          max_quotient = max_dividend // divisor
+
+        # Ensure quotient is at least 1
+          max_quotient = max(1, max_quotient)
+
+          quotient = random.randint(1, max_quotient)
+
+        # Exact division
+          dividend = divisor * quotient
+
+          question = f"{dividend} ÷ {divisor}"
+          answer = quotient
     # -----------------------------------------------------
     # Percentage
     # -----------------------------------------------------
@@ -282,13 +316,24 @@ def generate_question(
         percentage_options = [
             5,
             10,
+            12.5,
             15,
+            16.67,
             20,
             25,
             30,
+            33.33,
             40,
             50,
-            75
+            60,
+            66.67,
+            70,
+            75,
+            80,
+            83.33,
+            90,
+            95,
+            98
         ]
 
         percentage = random.choice(
@@ -455,6 +500,8 @@ def save_session():
 
     df["Session No"] = session_no
 
+    df["User ID"] = st.session_state.user_id
+
     df["Date"] = session_date
 
     df["Session DateTime"] = session_datetime
@@ -485,6 +532,8 @@ def save_session():
     summary = pd.DataFrame([{
 
         "Session No": session_no,
+
+        "User ID": st.session_state.user_id,
 
         "Date": session_date,
 
@@ -729,7 +778,7 @@ with st.sidebar:
 
         "First Number",
 
-        [1, 2, 3, 4],
+        [1, 2, 3, 4, 5, 6, 7, 8,9],
 
         index=1,
 
@@ -749,7 +798,7 @@ with st.sidebar:
 
         "Second Number",
 
-        [1, 2, 3, 4],
+        [1, 2, 3, 4, 5, 6, 7, 8,9],
 
         index=1,
 
@@ -771,7 +820,7 @@ with st.sidebar:
 
         min_value=5,
 
-        max_value=50,
+        max_value=100,
 
         value=10,
 
@@ -847,7 +896,8 @@ with st.sidebar:
 
         st.rerun()
 
-
+    st.sidebar.markdown("---")
+st.sidebar.caption("Developed by Mohd Rahid Khan")
 # =========================================================
 # HEADER
 # =========================================================
@@ -1059,6 +1109,25 @@ if (
                 user_answer
             )
 
+            # ---------------------------------------------
+            # Automatically move to the next question
+            # (or finish the practice) right after the
+            # answer is submitted — no extra click needed.
+            # ---------------------------------------------
+
+            if (
+                st.session_state.question_number
+                >= st.session_state.total_questions
+            ):
+
+                save_session()
+
+                st.session_state.game_finished = True
+
+            else:
+
+                create_next_question()
+
             st.rerun()
 
 
@@ -1130,44 +1199,10 @@ if (
             )
 
 
-        # -------------------------------------------------
-        # Next question
-        # -------------------------------------------------
-
-        if st.button(
-
-            "➡️ Next Question",
-
-            use_container_width=True
-
-        ):
-
-            st.session_state.last_feedback = None
-
-            st.session_state.last_answer = None
-
-            st.session_state.last_correct_answer = None
-
-            st.session_state.last_response_time = None
-
-
-            if (
-
-                st.session_state.question_number
-                >= st.session_state.total_questions
-
-            ):
-
-                save_session()
-
-                st.session_state.game_finished = True
-
-            else:
-
-                create_next_question()
-
-
-            st.rerun()
+        st.caption(
+            "☝️ Result of your previous answer — the next "
+            "question has already started above."
+        )
 
 
 # =========================================================
@@ -1451,148 +1486,242 @@ if st.session_state.game_finished:
 
 
 # =========================================================
-# ALL-TIME PRACTICE HISTORY
+# MY PRACTICE HISTORY (THIS VISIT / THIS BROWSER TAB ONLY)
 # =========================================================
+# Every user gets their own history, scoped to how long they
+# keep this tab open. As soon as a session finishes, it is
+# added to this list. Reopening the app later starts fresh —
+# older sessions (yours or anyone else's) are not shown here.
 
 st.divider()
 
 st.subheader(
-    "📚 All Practice History"
+    "📚 My Practice History (This Visit)"
 )
 
 
+all_history_df = None
+
 if os.path.exists(HISTORY_FILE):
 
-    history_df = pd.read_csv(
+    all_history_df = pd.read_csv(
         HISTORY_FILE
     )
 
-
-    if not history_df.empty:
-
-        # ---------------------------------------------
-        # Overall stats
-        # ---------------------------------------------
-
-        total_sessions = len(
-            history_df
-        )
-
-        total_questions_all = (
-            history_df["Questions"].sum()
-        )
-
-        total_time_all = (
-            history_df["Total Practice Time"].sum()
-        )
+    # Backward compatibility for history files saved
+    # before per-user tracking was added.
+    if "User ID" not in all_history_df.columns:
+        all_history_df["User ID"] = "unknown"
 
 
-        c1, c2, c3 = st.columns(3)
+if all_history_df is not None and not all_history_df.empty:
+
+    my_history_df = all_history_df[
+        all_history_df["User ID"]
+        == st.session_state.user_id
+    ].reset_index(drop=True)
+
+else:
+
+    my_history_df = pd.DataFrame()
 
 
-        c1.metric(
-            "Total Sessions",
-            total_sessions
-        )
+if not my_history_df.empty:
+
+    # ---------------------------------------------
+    # Overall stats (this user, this visit)
+    # ---------------------------------------------
+
+    total_sessions = len(
+        my_history_df
+    )
+
+    total_questions_all = (
+        my_history_df["Questions"].sum()
+    )
+
+    total_time_all = (
+        my_history_df["Total Practice Time"].sum()
+    )
 
 
-        c2.metric(
-            "Total Questions",
-            total_questions_all
-        )
+    c1, c2, c3 = st.columns(3)
 
 
-        c3.metric(
-            "Total Practice Time",
-            f"{total_time_all:.2f}s"
-        )
+    c1.metric(
+        "Sessions This Visit",
+        total_sessions
+    )
 
 
-        st.dataframe(
-
-            history_df,
-
-            use_container_width=True,
-
-            hide_index=True
-
-        )
+    c2.metric(
+        "Total Questions",
+        total_questions_all
+    )
 
 
-        # ---------------------------------------------
-        # Session-wise total time
-        # ---------------------------------------------
-
-        st.subheader(
-            "⏱️ Practice Time by Session"
-        )
+    c3.metric(
+        "Total Practice Time",
+        f"{total_time_all:.2f}s"
+    )
 
 
-        session_time_chart = px.bar(
+    st.dataframe(
 
-            history_df,
+        my_history_df.drop(
+            columns=["User ID"]
+        ),
 
-            x="Session No",
+        use_container_width=True,
 
-            y="Total Practice Time",
+        hide_index=True
 
-            text="Total Practice Time",
-
-            title="Total Time Spent in Each Session",
-
-            labels={
-                "Session No": "Session",
-                "Total Practice Time":
-                    "Time (seconds)"
-            }
-
-        )
+    )
 
 
-        session_time_chart.update_traces(
+    # ---------------------------------------------
+    # Session-wise total time
+    # ---------------------------------------------
 
-            texttemplate="%{text:.2f}s"
-
-        )
-
-
-        st.plotly_chart(
-
-            session_time_chart,
-
-            use_container_width=True
-
-        )
+    st.subheader(
+        "⏱️ Practice Time by Session"
+    )
 
 
-        # ---------------------------------------------
-        # Download all history
-        # ---------------------------------------------
+    session_time_chart = px.bar(
 
-        history_csv = history_df.to_csv(
-            index=False
-        ).encode("utf-8")
+        my_history_df,
+
+        x="Session No",
+
+        y="Total Practice Time",
+
+        text="Total Practice Time",
+
+        title="Total Time Spent in Each Session",
+
+        labels={
+            "Session No": "Session",
+            "Total Practice Time":
+                "Time (seconds)"
+        }
+
+    )
 
 
-        st.download_button(
+    session_time_chart.update_traces(
 
-            "⬇️ Download Complete Practice History",
+        texttemplate="%{text:.2f}s"
 
-            data=history_csv,
+    )
+    session_time_chart.update_xaxes(
+        tickmode="linear",
+        dtick=1
+    )
 
-            file_name="brain_mathdrill_history.csv",
 
-            mime="text/csv",
+    st.plotly_chart(
 
-            use_container_width=True
+        session_time_chart,
 
-        )
+        use_container_width=True
+
+    )
+
+
+    # ---------------------------------------------
+    # Download my history
+    # ---------------------------------------------
+
+    history_csv = my_history_df.to_csv(
+        index=False
+    ).encode("utf-8")
+
+
+    st.download_button(
+
+        "⬇️ Download My Practice History",
+
+        data=history_csv,
+
+        file_name="brain_mathdrill_my_history.csv",
+
+        mime="text/csv",
+
+        use_container_width=True
+
+    )
 
 
 else:
 
     st.info(
-        "No previous practice sessions yet."
+        "No practice sessions yet in this visit. "
+        "Finish a practice session and it will show up here "
+        "right away."
+    )
+
+
+# =========================================================
+# USAGE TRACKER (ACROSS ALL USERS)
+# =========================================================
+
+st.divider()
+
+st.subheader(
+    "📊 Usage Tracker"
+)
+
+st.caption(
+    "Overall usage across every user of this app."
+)
+
+
+if all_history_df is not None and not all_history_df.empty:
+
+    sessions_per_user = (
+        all_history_df
+        .groupby("User ID")
+        .size()
+    )
+
+    total_users = sessions_per_user.shape[0]
+
+    avg_sessions_per_user = (
+        sessions_per_user.mean()
+    )
+
+    max_sessions_by_a_user = (
+        sessions_per_user.max()
+    )
+
+
+    t1, t2, t3 = st.columns(3)
+
+
+    t1.metric(
+        "👥 Total Users",
+        total_users
+    )
+
+
+    t2.metric(
+        "📈 Avg. Sessions / User",
+        f"{avg_sessions_per_user:.2f}"
+    )
+
+
+    t3.metric(
+        "🏅 Max Sessions (Single User)",
+        int(max_sessions_by_a_user)
+    )
+
+
+else:
+
+    st.info(
+        "No usage data yet — stats will appear once "
+        "practice sessions have been completed."
     )
 
 
@@ -1636,3 +1765,20 @@ if not st.session_state.game_started:
     c2.info("² **Square**")
 
     c3.info("³ **Cube**")
+
+
+# =========================================================
+# FOOTER
+# =========================================================
+
+st.divider()
+
+st.markdown(
+    """
+    <div style="text-align:center; color:#888; padding: 10px 0;">
+    🧠 Brain MathDrill &nbsp;•&nbsp; Developed by
+    <b>Mohd Rahid Khan</b>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
